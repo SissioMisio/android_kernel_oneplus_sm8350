@@ -18,6 +18,10 @@
 #include <trace/events/sched.h>
 #include "qc_vas.h"
 
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include <linux/sched_assist/sched_assist_common.h>
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
+
 #define MAX_NR_HISTORY_COUNT	2
 struct cluster_data {
 	bool inited;
@@ -82,6 +86,21 @@ static unsigned int get_active_cpu_count(const struct cluster_data *cluster);
 
 /* ========================= sysfs interface =========================== */
 
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+static void store_cpus_systrace_c(struct cluster_data *state, unsigned int val, bool max)
+{
+	char buf[256];
+
+	if (max){
+		snprintf(buf, sizeof(buf), "C|9999|Group%d_max_cpu|%d\n", state->first_cpu, val);
+	} else {
+		snprintf(buf, sizeof(buf), "C|9999|Group%d_min_cpu|%d\n", state->first_cpu, val);
+	}
+
+	tracing_mark_write(buf);
+}
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
+
 static ssize_t store_min_cpus(struct cluster_data *state,
 				const char *buf, size_t count)
 {
@@ -92,6 +111,11 @@ static ssize_t store_min_cpus(struct cluster_data *state,
 
 	state->min_cpus = min(val, state->num_cpus);
 	wake_up_core_ctl_thread(state);
+
+	pr_debug("group %u min_cpus: %u from pid=%d comm=%s\n", state->first_cpu, state->min_cpus, current->pid, current->comm);
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	store_cpus_systrace_c(state, state->min_cpus, 0);
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
 
 	return count;
 }
@@ -111,6 +135,11 @@ static ssize_t store_max_cpus(struct cluster_data *state,
 
 	state->max_cpus = min(val, state->num_cpus);
 	wake_up_core_ctl_thread(state);
+
+	pr_debug("group %u max_cpus: %u from pid=%d comm=%s\n", state->first_cpu, state->max_cpus, current->pid, current->comm);
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	store_cpus_systrace_c(state, state->max_cpus, 1);
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
 
 	return count;
 }

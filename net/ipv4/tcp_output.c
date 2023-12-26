@@ -45,6 +45,17 @@
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_APP_MONITOR)
+#include <trace/hooks/vh_oplus_app_monitor.h>
+#endif
+
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_NWPOWER)
+void (*match_tcp_output)(struct sock *sk) = NULL;
+EXPORT_SYMBOL(match_tcp_output);
+void (*match_tcp_output_retrans)(struct sock *sk) = NULL;
+EXPORT_SYMBOL(match_tcp_output_retrans);
+#endif /* CONFIG_OPLUS_FEATURE_NWPOWER */
 
 /* Refresh clocks of a TCP socket,
  * ensuring monotically increasing values.
@@ -76,6 +87,10 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		tp->highest_sack = skb;
 
 	tp->packets_out += tcp_skb_pcount(skb);
+	#if IS_ENABLED(CONFIG_OPLUS_FEATURE_APP_MONITOR)
+	trace_android_vh_oplus_app_monitor_update(sk, skb, 1, 0);
+	#endif /* CONFIG_OPLUS_FEATURE_APP_MONITOR */
+
 	if (!prior_packets || icsk->icsk_pending == ICSK_TIME_LOSS_PROBE)
 		tcp_rearm_rto(sk);
 
@@ -1165,6 +1180,7 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 			      tcp_skb_pcount(skb));
 
 	tp->segs_out += tcp_skb_pcount(skb);
+
 	/* OK, its time to fill skb_shinfo(skb)->gso_{segs|size} */
 	skb_shinfo(skb)->gso_segs = tcp_skb_pcount(skb);
 	skb_shinfo(skb)->gso_size = tcp_skb_mss(skb);
@@ -1178,6 +1194,12 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 	tcp_add_tx_delay(skb, tp);
 
 	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
+
+	#if IS_ENABLED(CONFIG_OPLUS_FEATURE_NWPOWER)
+	if (match_tcp_output != NULL) {
+		match_tcp_output(sk);
+	}
+	#endif /* CONFIG_OPLUS_FEATURE_NWPOWER */
 
 	if (unlikely(err > 0)) {
 		tcp_enter_cwr(sk);
@@ -3034,7 +3056,16 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 				  TCP_SKB_CB(skb)->seq, segs, err);
 
 	if (likely(!err)) {
+		#if IS_ENABLED(CONFIG_OPLUS_FEATURE_APP_MONITOR)
+		trace_android_vh_oplus_app_monitor_update(sk, skb, 1, 1);
+		#endif /* CONFIG_OPLUS_FEATURE_APP_MONITOR */
+
 		trace_tcp_retransmit_skb(sk, skb);
+		#if IS_ENABLED(CONFIG_OPLUS_FEATURE_NWPOWER)
+		if (match_tcp_output_retrans != NULL) {
+			match_tcp_output_retrans(sk);
+		}
+		#endif /* CONFIG_OPLUS_FEATURE_NWPOWER */
 	} else if (err != -EBUSY) {
 		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPRETRANSFAIL, segs);
 	}
@@ -3377,7 +3408,7 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 	th->window = htons(min(req->rsk_rcv_wnd, 65535U));
 	tcp_options_write((__be32 *)(th + 1), NULL, &opts);
 	th->doff = (tcp_header_size >> 2);
-	TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
+	__TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
 
 #ifdef CONFIG_TCP_MD5SIG
 	/* Okay, we have all we need - do the md5 hash if needed */

@@ -789,6 +789,19 @@ config UCLAMP_BUCKETS_COUNT
 
 	  If in doubt, use the default value.
 
+#ifdef OPLUS_FEATURE_SCHED_ASSIST
+source "kernel/sched_assist/Kconfig"
+#ifdef CONFIG_OPLUS_FEATURE_FRAME_BOOST
+source "kernel/tuning/Kconfig"
+#endif
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
+
+source "kernel/uad/Kconfig"
+
+#ifdef OPLUS_FEATURE_SCHED_ASSIST
+source "kernel/special_opt/Kconfig"
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
+
 endmenu
 
 #
@@ -1832,7 +1845,7 @@ config SLUB_DEBUG
 	  result in significant savings in code size. This also disables
 	  SLUB sysfs support. /sys/slab will not exist and there will be
 	  no support for cache validation etc.
-
+	  
 config SLUB_MEMCG_SYSFS_ON
 	default n
 	bool "Enable memcg SLUB sysfs support by default" if EXPERT

@@ -170,16 +170,6 @@ static inline bool can_follow_write_pte(pte_t pte, unsigned int flags)
 	    ((flags & FOLL_FORCE) && (flags & FOLL_COW) && pte_dirty(pte));
 }
 
-/*
- * A (separate) COW fault might break the page the other way and
- * get_user_pages() would return the page from what is now the wrong
- * VM. So we need to force a COW break at GUP time even for reads.
- */
-static inline bool should_force_cow_break(struct vm_area_struct *vma, unsigned int flags)
-{
-	return is_cow_mapping(vma->vm_flags) && (flags & FOLL_GET);
-}
-
 static struct page *follow_page_pte(struct vm_area_struct *vma,
 		unsigned long address, pmd_t *pmd, unsigned int flags,
 		struct dev_pagemap **pgmap)
@@ -291,8 +281,15 @@ retry:
 		mark_page_accessed(page);
 	}
 	if ((flags & FOLL_MLOCK) && (vma->vm_flags & VM_LOCKED)) {
+#ifndef CONFIG_CONT_PTE_HUGEPAGE
 		/* Do not mlock pte-mapped THP */
 		if (PageTransCompound(page))
+#else
+		if (PageTransCompound(page) &&
+		    (!ContPteHugePageHead(page) ||
+		     PageDoubleMap(compound_head(page)) ||
+		     PageAnon(page)))
+#endif
 			goto out;
 
 		/*
@@ -1469,7 +1466,10 @@ check_again:
 	for (i = 0; i < nr_pages;) {
 
 		struct page *head = compound_head(pages[i]);
-
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+		if (ContPteHugePage(head))
+			continue;
+#endif
 		/*
 		 * gup may start from a tail page. Advance step by the left
 		 * part.
@@ -2337,10 +2337,6 @@ static bool gup_fast_permitted(unsigned long start, unsigned long end)
  *
  * If the architecture does not support this function, simply return with no
  * pages pinned.
- *
- * Careful, careful! COW breaking can go either way, so a non-write
- * access can get ambiguous page results. If you call this function without
- * 'write' set, you'd better be sure that you're ok with that ambiguity.
  */
 int __get_user_pages_fast(unsigned long start, int nr_pages, int write,
 			  struct page **pages)
@@ -2368,12 +2364,6 @@ int __get_user_pages_fast(unsigned long start, int nr_pages, int write,
 	 *
 	 * We do not adopt an rcu_read_lock(.) here as we also want to
 	 * block IPIs that come from THPs splitting.
-	 *
-	 * NOTE! We allow read-only gup_fast() here, but you'd better be
-	 * careful about possible COW pages. You'll get _a_ COW page, but
-	 * not necessarily the one you intended to get depending on what
-	 * COW event happens after this. COW may break the page copy in a
-	 * random direction.
 	 */
 
 	if (IS_ENABLED(CONFIG_HAVE_FAST_GUP) &&

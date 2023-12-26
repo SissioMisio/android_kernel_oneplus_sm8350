@@ -764,11 +764,11 @@ struct ext_css_set init_ext_css_set = {
 		.mg_preload_node        = LIST_HEAD_INIT(init_css_set.mg_preload_node),
 		.mg_node                = LIST_HEAD_INIT(init_css_set.mg_node),
 		/*
-		 * The following field is re-initialized when this cset gets linked
-		 * in cgroup_init().  However, let's initialize the field
-		 * statically too so that the default cgroup can be accessed safely
-		 * early during boot.
-		 */
+		* The following field is re-initialized when this cset gets linked
+		* in cgroup_init().  However, let's initialize the field
+		* statically too so that the default cgroup can be accessed safely
+		* early during boot.
+		*/
 		.dfl_cgrp               = &cgrp_dfl_root.cgrp,
 	},
 	.mg_src_preload_node	= LIST_HEAD_INIT(init_ext_css_set.mg_src_preload_node),
@@ -2701,7 +2701,7 @@ void cgroup_migrate_finish(struct cgroup_mgctx *mgctx)
 	spin_lock_irq(&css_set_lock);
 
 	list_for_each_entry_safe(cset, tmp_cset, &mgctx->preloaded_src_csets,
-				 mg_src_preload_node) {
+	    mg_src_preload_node) {
 		cset->cset.mg_src_cgrp = NULL;
 		cset->cset.mg_dst_cgrp = NULL;
 		cset->cset.mg_dst_cset = NULL;
@@ -2710,7 +2710,7 @@ void cgroup_migrate_finish(struct cgroup_mgctx *mgctx)
 	}
 
 	list_for_each_entry_safe(cset, tmp_cset, &mgctx->preloaded_dst_csets,
-				 mg_dst_preload_node) {
+	    mg_dst_preload_node) {
 		cset->cset.mg_src_cgrp = NULL;
 		cset->cset.mg_dst_cgrp = NULL;
 		cset->cset.mg_dst_cset = NULL;
@@ -2794,7 +2794,7 @@ int cgroup_migrate_prepare_dst(struct cgroup_mgctx *mgctx)
 
 	/* look up the dst cset for each src cset and link it to src */
 	list_for_each_entry_safe(ext_src_set, tmp_cset, &mgctx->preloaded_src_csets,
-				 mg_src_preload_node) {
+	    mg_src_preload_node) {
 		struct css_set *src_cset = &ext_src_set->cset;
 		struct css_set *dst_cset;
 		struct ext_css_set *ext_dst_cset;
@@ -3044,8 +3044,8 @@ static int cgroup_update_dfl_csses(struct cgroup *cgrp)
 	DEFINE_CGROUP_MGCTX(mgctx);
 	struct cgroup_subsys_state *d_css;
 	struct cgroup *dsct;
-	bool has_tasks;
 	struct ext_css_set *ext_src_set;
+	bool has_tasks;
 	int ret;
 
 	lockdep_assert_held(&cgroup_mutex);
@@ -3076,7 +3076,7 @@ static int cgroup_update_dfl_csses(struct cgroup *cgrp)
 
 	spin_lock_irq(&css_set_lock);
 	list_for_each_entry(ext_src_set, &mgctx.preloaded_src_csets,
-			    mg_src_preload_node) {
+	    mg_src_preload_node) {
 		struct task_struct *task, *ntask;
 
 		/* all tasks in src_csets need to be migrated */
@@ -5352,6 +5352,9 @@ static struct cgroup_subsys_state *css_create(struct cgroup *cgrp,
 	struct cgroup_subsys_state *parent_css = cgroup_css(parent, ss);
 	struct cgroup_subsys_state *css;
 	int err;
+#ifdef CONFIG_OPLUS_FEATURE_UID_PERF
+	static char name[MAX_CGROUP_TYPE_NAMELEN];
+#endif
 
 	lockdep_assert_held(&cgroup_mutex);
 
@@ -5363,6 +5366,13 @@ static struct cgroup_subsys_state *css_create(struct cgroup *cgrp,
 
 	init_and_link_css(css, ss, cgrp);
 
+#ifdef CONFIG_OPLUS_FEATURE_UID_PERF
+	if(ss->id == cpuset_cgrp_id) {
+		cgroup_name(cgrp, name, MAX_CGROUP_TYPE_NAMELEN);
+		pr_warn("%s: cgroup=%s cgid=%d cgroup_subsys=%s ssid=%d cpuset_cgrp_id=%d", __func__, name, cgrp->id, ss->name, ss->id, cpuset_cgrp_id);
+		cpuset_add_cg(cgrp->id, name);
+	}
+#endif
 	err = percpu_ref_init(&css->refcnt, css_release, 0, GFP_KERNEL);
 	if (err)
 		goto err_free_css;

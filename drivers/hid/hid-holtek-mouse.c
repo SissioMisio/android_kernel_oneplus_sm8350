@@ -82,6 +82,7 @@ static int holtek_mouse_probe(struct hid_device *hdev,
 		return ret;
 	}
 
+>>>>>>> origin/upstream/qcom/8350/kernel.lnx.5.4.r1-rel
 	return 0;
 }
 

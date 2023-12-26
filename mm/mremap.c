@@ -160,6 +160,15 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 				   new_pte++, new_addr += PAGE_SIZE) {
 		if (pte_none(*old_pte))
 			continue;
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+		/* in mremap case, new_addres might not be aligned */
+		if (pte_cont(*old_pte)) {
+#if CONFIG_CHP_ABMORMAL_PTES_DEBUG
+			{volatile bool __maybe_unused x = commit_chp_abnormal_ptes_record(DOUBLE_MAP_REASON_MOVE_PTES);}
+#endif
+			__split_huge_cont_pte(vma, old_pte, old_addr, false, NULL, old_ptl);
+		}
+#endif
 
 		pte = ptep_get_and_clear(mm, old_addr, old_pte);
 		/*
@@ -191,38 +200,6 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		drop_rmap_locks(vma);
 }
 
-#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
-static inline bool trylock_vma_ref_count(struct vm_area_struct *vma)
-{
-	/*
-	 * If we have the only reference, swap the refcount to -1. This
-	 * will prevent other concurrent references by get_vma() for SPFs.
-	 */
-	return atomic_cmpxchg(&vma->vm_ref_count, 1, -1) == 1;
-}
-
-/*
- * Restore the VMA reference count to 1 after a fast mremap.
- */
-static inline void unlock_vma_ref_count(struct vm_area_struct *vma)
-{
-	/*
-	 * This should only be called after a corresponding,
-	 * successful trylock_vma_ref_count().
-	 */
-	VM_BUG_ON_VMA(atomic_cmpxchg(&vma->vm_ref_count, -1, 1) != -1,
-		      vma);
-}
-#else	/* !CONFIG_SPECULATIVE_PAGE_FAULT */
-static inline bool trylock_vma_ref_count(struct vm_area_struct *vma)
-{
-	return true;
-}
-static inline void unlock_vma_ref_count(struct vm_area_struct *vma)
-{
-}
-#endif	/* CONFIG_SPECULATIVE_PAGE_FAULT */
-
 #ifdef CONFIG_HAVE_MOVE_PMD
 static bool move_normal_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 		  unsigned long new_addr, unsigned long old_end,
@@ -241,14 +218,6 @@ static bool move_normal_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 	 * should have release it.
 	 */
 	if (WARN_ON(!pmd_none(*new_pmd)))
-		return false;
-
-	/*
-	 * We hold both exclusive mmap_lock and rmap_lock at this point and
-	 * cannot block. If we cannot immediately take exclusive ownership
-	 * of the VMA fallback to the move_ptes().
-	 */
-	if (!trylock_vma_ref_count(vma))
 		return false;
 
 	/*
@@ -273,7 +242,6 @@ static bool move_normal_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 		spin_unlock(new_ptl);
 	spin_unlock(old_ptl);
 
-	unlock_vma_ref_count(vma);
 	return true;
 }
 #endif

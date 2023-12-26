@@ -321,6 +321,9 @@ void __migration_entry_wait(struct mm_struct *mm, pte_t *ptep,
 		goto out;
 
 	page = migration_entry_to_page(entry);
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+		CHP_BUG_ON(PageCont(page));
+#endif
 	page = compound_head(page);
 
 	/*
@@ -488,6 +491,8 @@ int migrate_page_move_mapping(struct address_space *mapping,
 	if (newzone != oldzone) {
 		__dec_node_state(oldzone->zone_pgdat, NR_FILE_PAGES);
 		__inc_node_state(newzone->zone_pgdat, NR_FILE_PAGES);
+
+		/* FIXME: chp lruvec no care! */
 		if (PageSwapBacked(page) && !PageSwapCache(page)) {
 			__dec_node_state(oldzone->zone_pgdat, NR_SHMEM);
 			__inc_node_state(newzone->zone_pgdat, NR_SHMEM);
@@ -613,6 +618,10 @@ void migrate_page_states(struct page *newpage, struct page *page)
 		SetPageChecked(newpage);
 	if (PageMappedToDisk(page))
 		SetPageMappedToDisk(newpage);
+#ifdef CONFIG_LOOK_AROUND
+	if (TestClearPageLookAroundRef(page))
+		SetPageLookAroundRef(newpage);
+#endif
 
 	/* Move dirty on pages not done by migrate_page_move_mapping() */
 	if (PageDirty(page))
@@ -1035,6 +1044,10 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 
 		lock_page(page);
 	}
+	/* for debugging, detect the migration of subpages */
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	CHP_BUG_ON(PageCont(page));
+#endif
 
 	if (PageWriteback(page)) {
 		/*

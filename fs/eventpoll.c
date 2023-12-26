@@ -1928,10 +1928,19 @@ fetch_events:
 				__add_wait_queue_exclusive(&ep->wq, &wait);
 		}
 		write_unlock_irq(&ep->lock);
-
+#ifdef OPLUS_FEATURE_HEALTHINFO
+#ifdef CONFIG_OPLUS_JANK_INFO
+		current->in_epoll = 1;
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
 		if (!eavail && !res)
 			timed_out = !freezable_schedule_hrtimeout_range(to, slack,
 									HRTIMER_MODE_ABS);
+#ifdef OPLUS_FEATURE_HEALTHINFO
+#ifdef CONFIG_OPLUS_JANK_INFO
+			current->in_epoll = 0;
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
 
 		/*
 		 * We were woken up, thus go and try to harvest some events.

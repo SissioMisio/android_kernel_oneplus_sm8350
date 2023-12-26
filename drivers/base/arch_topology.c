@@ -22,6 +22,9 @@
 #include <linux/smp.h>
 #include <linux/sched.h>
 #include <trace/hooks/topology.h>
+#if defined(CONFIG_OPLUS_CPU_FREQ_GOV_UAG) && defined(CONFIG_UAG_NONLINEAR_FREQ_CTL)
+#include <../kernel/uad/nonlinear_opp_cap.h>
+#endif
 
 DEFINE_PER_CPU(unsigned long, freq_scale) = SCHED_CAPACITY_SCALE;
 DEFINE_PER_CPU(unsigned long, max_cpu_freq);
@@ -36,6 +39,9 @@ void arch_set_freq_scale(struct cpumask *cpus, unsigned long cur_freq,
 	scale = (cur_freq << SCHED_CAPACITY_SHIFT) / max_freq;
 
 	trace_android_vh_arch_set_freq_scale(cpus, cur_freq, max_freq, &scale);
+#if defined(CONFIG_OPLUS_CPU_FREQ_GOV_UAG) && defined(CONFIG_UAG_NONLINEAR_FREQ_CTL)
+	nlopp_arch_set_freq_scale(NULL, cpus, cur_freq, max_freq, &scale);
+#endif
 
 	for_each_cpu(i, cpus){
 		per_cpu(freq_scale, i) = scale;
@@ -59,7 +65,9 @@ void arch_set_max_freq_scale(struct cpumask *cpus,
 	scale = (policy_max_freq << SCHED_CAPACITY_SHIFT) / max_freq;
 
 	trace_android_vh_arch_set_freq_scale(cpus, policy_max_freq, max_freq, &scale);
-
+#if defined(CONFIG_OPLUS_CPU_FREQ_GOV_UAG) && defined(CONFIG_UAG_NONLINEAR_FREQ_CTL)
+	nlopp_arch_set_freq_scale(NULL, cpus, policy_max_freq, max_freq, &scale);
+#endif
 	for_each_cpu(cpu, cpus)
 		per_cpu(max_freq_scale, cpu) = scale;
 }
@@ -167,7 +175,7 @@ bool __init topology_parse_cpu_capacity(struct device_node *cpu_node, int cpu)
 				   &cpu_capacity);
 	if (!ret) {
 		if (!raw_capacity) {
-			raw_capacity = kcalloc(cpumask_last(cpu_possible_mask),
+			raw_capacity = kcalloc(num_possible_cpus(),
 					       sizeof(*raw_capacity),
 					       GFP_KERNEL);
 			if (!raw_capacity) {

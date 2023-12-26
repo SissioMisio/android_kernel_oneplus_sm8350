@@ -56,7 +56,20 @@
 #include <asm/unistd.h>
 #include <asm/siginfo.h>
 #include <asm/cacheflush.h>
+#if defined(OPLUS_FEATURE_HANS_FREEZE) && defined(CONFIG_OPLUS_FEATURE_HANS)
+#include <linux/hans.h>
+#endif /*OPLUS_FEATURE_HANS_FREEZE*/
 
+#ifdef CONFIG_QGKI
+#include <soc/oplus/system/oplus_process.h>
+#endif
+
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include <linux/sched_assist/sched_assist_common.h>
+#endif /* OPLUS_FEATURE_SCHED_ASSIST */
+
+#undef CREATE_TRACE_POINTS
+#include <trace/hooks/signal.h>
 /*
  * SLAB caches for signal bits.
  */
@@ -1080,6 +1093,14 @@ static int __send_signal(int sig, struct kernel_siginfo *info, struct task_struc
 	assert_spin_locked(&t->sighand->siglock);
 
 	result = TRACE_SIGNAL_IGNORED;
+	#ifdef CONFIG_QGKI
+        if(1) {
+                /*add the SIGKILL print log for some debug*/
+                if((sig == SIGHUP || sig == 33 || sig == SIGKILL || sig == SIGSTOP || sig == SIGABRT || sig == SIGTERM || sig == SIGCONT) && is_key_process(t)) {
+                       printk("Some other process %d:%s parent %d:%s want to send sig:%d to pid:%d tgid:%d comm:%s\n", current->pid, current->comm, current->real_parent->pid, current->real_parent->comm, sig, t->pid, t->tgid, t->comm);
+                }
+        }
+        #endif
 	if (!prepare_signal(sig, t, force))
 		goto ret;
 
@@ -1287,6 +1308,13 @@ int do_send_sig_info(int sig, struct kernel_siginfo *info, struct task_struct *p
 {
 	unsigned long flags;
 	int ret = -ESRCH;
+	trace_android_vh_do_send_sig_info(sig, current, p);
+#if defined(OPLUS_FEATURE_HANS_FREEZE) && defined(CONFIG_OPLUS_FEATURE_HANS)
+	hans_check_signal(p, sig);
+#endif /*OPLUS_FEATURE_HANS_FREEZE*/
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	oplus_boost_kill_signal(sig, current, p);
+#endif
 
 	if (lock_task_sighand(p, &flags)) {
 		ret = send_signal(sig, info, p, type);
@@ -1400,6 +1428,7 @@ struct sighand_struct *__lock_task_sighand(struct task_struct *tsk,
 }
 EXPORT_SYMBOL_GPL(__lock_task_sighand);
 
+#define REAPER_SZ (SZ_1M * 32 / PAGE_SIZE)
 /*
  * send signal info to all the members of a group
  */
@@ -1415,12 +1444,23 @@ int group_send_sig_info(int sig, struct kernel_siginfo *info,
 	if (!ret && sig) {
 		check_panic_on_foreground_kill(p);
 		ret = do_send_sig_info(sig, info, p, type);
+		if (!ret && sig == SIGKILL) {
+			unsigned long pages = 0;
+
+			task_lock(p);
+			if (p->mm)
+				pages = get_mm_counter(p->mm, MM_ANONPAGES) +
+					get_mm_counter(p->mm, MM_SWAPENTS);
+			task_unlock(p);
+
+			if (pages > REAPER_SZ || !strcmp(current->comm, ULMK_MAGIC) ||
+						!strcmp(current->comm, ATHENA_KILLER_MAGIC))
 		if (capable(CAP_KILL) && sig == SIGKILL)
 			if (!strcmp(current->comm, ULMK_MAGIC) ||
 				!strcmp(current->comm, PRE_KILL))
 				add_to_oom_reaper(p);
+		}
 	}
-
 	return ret;
 }
 

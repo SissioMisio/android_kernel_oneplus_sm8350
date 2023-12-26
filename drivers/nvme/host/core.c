@@ -610,9 +610,10 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 		*control |= NVME_RW_DTYPE_STREAMS;
 		*dsmgmt |= streamid << 16;
 	}
-
+#ifndef CONFIG_BLK_DEV_THROTTLING
 	if (streamid < ARRAY_SIZE(req->q->write_hints))
 		req->q->write_hints[streamid] += blk_rq_bytes(req) >> 9;
+#endif
 }
 
 static inline void nvme_setup_flush(struct nvme_ns *ns,

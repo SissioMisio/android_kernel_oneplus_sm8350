@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 1991, 1992, 1993, 1994  Linus Torvalds
  *
- *  Swap reorganised 29.12.95, 
+ *  Swap reorganised 29.12.95,
  *  Asynchronous swapping added 30.12.95. Stephen Tweedie
  *  Removed race in async swapping. 14.4.1996. Bruno Haible
  *  Add swap of shared pages through the page cache. 20.2.1998. Stephen Tweedie
@@ -26,6 +26,7 @@
 #include <linux/uio.h>
 #include <linux/sched/task.h>
 #include <asm/pgtable.h>
+
 
 static struct bio *get_swap_bio(gfp_t gfp_flags,
 				struct page *page, bio_end_io_t end_io)
@@ -327,15 +328,28 @@ int swap_readpage(struct page *page, bool synchronous)
 
 		ret = mapping->a_ops->readpage(swap_file, page);
 		if (!ret)
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+			count_vm_events(PSWPIN, thp_nr_pages(page));
+#else
 			count_vm_event(PSWPIN);
+#endif
 		goto out;
 	}
 
 	ret = bdev_read_page(sis->bdev, swap_page_sector(page), page);
 	if (!ret) {
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+		count_vm_events(PSWPIN, thp_nr_pages(page));
+#else
 		count_vm_event(PSWPIN);
+#endif
 		goto out;
 	}
+
+#ifdef CONT_PTE_HUGEPAGE_64K_ZRAM
+	//submit not support for readpage fallback now
+	CHP_BUG_ON(PageContFallback(page));
+#endif
 
 	ret = 0;
 	bio = get_swap_bio(GFP_KERNEL, page, end_swap_bio_read);
@@ -355,7 +369,11 @@ int swap_readpage(struct page *page, bool synchronous)
 		get_task_struct(current);
 		bio->bi_private = current;
 	}
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	count_vm_events(PSWPIN, thp_nr_pages(page));
+#else
 	count_vm_event(PSWPIN);
+#endif
 	bio_get(bio);
 	qc = submit_bio(bio);
 	while (synchronous) {
