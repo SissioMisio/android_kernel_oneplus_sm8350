@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_ISP_CONTEXT_H_
@@ -28,6 +28,11 @@
 
 /* max requests per ctx for isp */
 #define CAM_ISP_CTX_REQ_MAX                     8
+/*
+ * Maximum configuration entry size  - This is based on the
+ * worst case DUAL IFE use case plus some margin.
+ */
+#define CAM_ISP_CTX_CFG_MAX                     25
 
 /*
  * Maximum entries in state monitoring array for error logging
@@ -143,10 +148,6 @@ struct cam_isp_ctx_irq_ops {
  * @num_acked:                 Count to track acked entried for output.
  *                             If count equals the number of fence out, it means
  *                             the request has been completed.
- * @early_fence_map_index      Array which stores fence map out index for resource
- *                             which early buf done is received.
- * @flag_sync_set              Flags to track if early bufdone fence are signalled
- *                             or not
  * @num_deferred_acks:         Number of buf_dones/acks that are deferred to
  *                             handle or signalled in special scenarios.
  *                             Increment this count instead of num_acked and
@@ -167,13 +168,12 @@ struct cam_isp_ctx_req {
 	struct cam_ctx_request               *base;
 	struct cam_hw_update_entry            cfg[CAM_ISP_CTX_CFG_MAX];
 	uint32_t                              num_cfg;
-	struct cam_hw_fence_map_entry         fence_map_out[CAM_ISP_CTX_RES_MAX];
+	struct cam_hw_fence_map_entry         fence_map_out
+						[CAM_ISP_CTX_RES_MAX];
 	uint32_t                              num_fence_map_out;
 	struct cam_hw_fence_map_entry         fence_map_in[CAM_ISP_CTX_RES_MAX];
 	uint32_t                              num_fence_map_in;
 	uint32_t                              num_acked;
-	uint32_t                     early_fence_map_index[CAM_ISP_CTX_RES_MAX];
-	bool                                  flag_sync_set;
 	uint32_t                              num_deferred_acks;
 	uint32_t                  deferred_fence_map_index[CAM_ISP_CTX_RES_MAX];
 	int32_t                               bubble_report;
@@ -215,6 +215,9 @@ struct cam_isp_context_state_monitor {
 
 struct cam_isp_context_req_id_info {
 	int64_t                          last_bufdone_req_id;
+#ifdef OPLUS_FEATURE_CAMERA_COMMON //lanhe todo:
+	uint64_t                         last_rdi_req_id;
+#endif
 };
 
 /**
@@ -270,6 +273,7 @@ struct cam_isp_context_event_record {
  * @custom_enabled:            Custom HW enabled for this ctx
  * @use_frame_header_ts:       Use frame header for qtimer ts
  * @support_consumed_addr:     Indicate whether HW has last consumed addr reg
+ * @is_anchor_instance:        Indicate whether this HW is used to process anchor frame
  * @apply_in_progress          Whether request apply is in progress
  * @init_timestamp:            Timestamp at which this context is initialized
  * @isp_device_type:           ISP device type
@@ -277,12 +281,16 @@ struct cam_isp_context_event_record {
  *                             decide whether to apply request in offline ctx
  * @workq:                     Worker thread for offline ife
  * @trigger_id:                ID provided by CRM for each ctx on the link
- * @last_bufdone_err_apply_req_id:  last bufdone error apply request id
+ * @last_bufdone_error_apply_req_id:  last bufdone error apply request id
+ * @apply_fail_cnt_on_bubble:  Count of apply fails after bubble
  *
  */
 struct cam_isp_context {
 	struct cam_context              *base;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON //lanhe todo:
+	uint64_t                         rdi_frame_id;
+#endif
 	int64_t                          frame_id;
 	uint32_t                         frame_id_meta;
 	uint32_t                         substate_activated;
@@ -300,6 +308,8 @@ struct cam_isp_context {
 	int64_t                          reported_req_id;
 	uint32_t                         subscribe_event;
 	int64_t                          last_applied_req_id;
+	int64_t                          bubble_req_id;
+	int64_t                          notified_req_id;
 	uint64_t                         last_sof_timestamp;
 	uint32_t                         bubble_frame_cnt;
 	atomic64_t                       state_monitor_head;
@@ -318,13 +328,15 @@ struct cam_isp_context {
 	bool                                  custom_enabled;
 	bool                                  use_frame_header_ts;
 	bool                                  support_consumed_addr;
+	bool                                  is_anchor_instance;
 	atomic_t                              apply_in_progress;
 	unsigned int                          init_timestamp;
 	uint32_t                              isp_device_type;
 	atomic_t                              rxd_epoch;
 	struct cam_req_mgr_core_workq        *workq;
 	int32_t                               trigger_id;
-	int64_t                               last_bufdone_err_apply_req_id;
+	int64_t                               last_bufdone_error_apply_req_id;
+	uint32_t                              apply_fail_cnt_on_bubble;
 };
 
 /**
@@ -369,16 +381,5 @@ int cam_isp_context_init(struct cam_isp_context *ctx,
  */
 int cam_isp_context_deinit(struct cam_isp_context *ctx);
 
-/**
- * cam_isp_subdev_close_internal()
- *
- * @brief:              Close function for the isp dev
- *
- * @sd:                 Pointer to struct v4l2_subdev
- * @fh:                 Pointer to struct v4l2_subdev_fh
- *
- */
-int cam_isp_subdev_close_internal(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh);
 
 #endif  /* __CAM_ISP_CONTEXT_H__ */
